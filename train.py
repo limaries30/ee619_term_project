@@ -42,10 +42,20 @@ def train(agent: Agent, label: Optional[str], num_episodes: int, seed: int):
     env = gym.make('Walker2DBulletEnv-v0')
     agent.load()
     rewards: List[float] = []
+
+    num_actions = env.action_space
+    num_states = env.observation_space
+
+    print(num_states,num_actions)
+
     for seed_ in range(seed, seed + num_episodes):
         env.seed(seed_)
         observation = env.reset()
+
+        print('initial observation',observation.shape)
+        raise ValueError
         done = False
+        episode_steps = 0
         while not done:
             env.render()
             action = agent.act(observation)
@@ -53,6 +63,9 @@ def train(agent: Agent, label: Optional[str], num_episodes: int, seed: int):
             observation, reward, done, _ = env.step(action)
 
             rewards.append(reward)
+
+            episode_steps += 1
+            #print("episode_steps",episode_steps)
 
     mean_episode_return = fsum(rewards) / num_episodes
     if label is None:

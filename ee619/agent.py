@@ -14,6 +14,8 @@ class Agent:
         self._action_space = Box(-1, 1, (6,))
         self._action_space.seed(0)
 
+        self._state_space = 22
+
     def act(self, observation: np.ndarray):
         """Decides which action to take for the given observation."""
         del observation
