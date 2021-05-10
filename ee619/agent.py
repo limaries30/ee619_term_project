@@ -4,9 +4,19 @@ from os.path import abspath, dirname, realpath
 from gym.spaces.box import Box
 import numpy as np
 
+import yaml
+import os
+
 
 ROOT = dirname(abspath(realpath(__file__)))  # path to the ee619 directory
 
+YAML_PATH = './ee619/conf.yaml'
+if os.path.isfile(YAML_PATH):
+    with open(YAML_PATH) as f:
+        conf = yaml.safe_load(f)
+    print(conf['gamma'])
+else:
+    print('no yaml file')
 
 class Agent:
     """Agent for a Walker2DBullet environment."""
@@ -28,3 +38,4 @@ class Agent:
             path = join(ROOT, 'model.pth')
             self.policy.load_state_dict(torch.load(path))
         """
+

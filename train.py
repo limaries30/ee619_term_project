@@ -17,6 +17,7 @@ def parse_args() -> Namespace:
     parser = ArgumentParser(
         description='Evaluates an agent on a Walker2DBullet environment.')
     parser.add_argument('-l', dest='label', default=None,
+
                         help='if unspecified, the mean episodic return will be '
                              'printed to stdout. otherwise, it will be dumped '
                              'to a pickle file of the given path.')
@@ -46,14 +47,13 @@ def train(agent: Agent, label: Optional[str], num_episodes: int, seed: int):
     num_actions = env.action_space
     num_states = env.observation_space
 
-    print(num_states,num_actions)
+    #print(num_states,num_actions)
 
     for seed_ in range(seed, seed + num_episodes):
         env.seed(seed_)
         observation = env.reset()
 
-        print('initial observation',observation.shape)
-        raise ValueError
+        #print('initial observation',observation.shape)
         done = False
         episode_steps = 0
         while not done:
