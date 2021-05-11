@@ -14,7 +14,6 @@ YAML_PATH = './ee619/conf.yaml'
 if os.path.isfile(YAML_PATH):
     with open(YAML_PATH) as f:
         conf = yaml.safe_load(f)
-    print(conf['gamma'])
 else:
     print('no yaml file')
 
