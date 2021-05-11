@@ -3,6 +3,7 @@ from os.path import abspath, dirname, realpath
 
 from gym.spaces.box import Box
 import numpy as np
+from model import GaussianPolicy, QNetwork, DeterministicPolicy
 
 import yaml
 import os
@@ -41,8 +42,8 @@ class Agent:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # self.critic = QNetwork(num_inputs, action_space.shape[0], conf['hidden_size']).to(device=self.device)
-        # self.critic_optim = Adam(self.critic.parameters(), lr=conf['lr'])
+        self.critic = QNetwork(self._state_space, self._action_space.shape[0], conf['hidden_size']).to(device=self.device)
+        self.critic_optim = Adam(self.critic.parameters(), lr=conf['lr'])
 
 
     def act(self, observation: np.ndarray):
