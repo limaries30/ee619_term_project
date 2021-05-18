@@ -7,7 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pybullet_envs
 
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer(object):
@@ -48,17 +47,17 @@ class Actor(nn.Module):
     def __init__(self, state_dim, action_dim, max_action):
         super(Actor, self).__init__()
 
-        self.l1 = nn.Linear(state_dim, 256)
-        self.l2 = nn.Linear(256, 256)
-        self.l3 = nn.Linear(256, action_dim)
+        self.fc1 = nn.Linear(state_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, action_dim)
 		
         self.max_action = max_action
 		
 
     def forward(self, state):
-        a = F.relu(self.l1(state))
-        a = F.relu(self.l2(a))
-        return self.max_action * torch.tanh(self.l3(a))
+        a = F.relu(self.fc1(state))
+        a = F.relu(self.fc2(a))
+        return self.max_action * torch.tanh(self.fc3(a))
 
 
 class Critic(nn.Module):
@@ -66,35 +65,35 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
 
         # Q1 architecture
-        self.l1 = nn.Linear(state_dim + action_dim, 256)
-        self.l2 = nn.Linear(256, 256)
-        self.l3 = nn.Linear(256, 1)
+        self.fc1 = nn.Linear(state_dim + action_dim, 256)
+        self.fc2 = nn.Linear(256, 256)
+        self.fc3 = nn.Linear(256, 1)
 
         # Q2 architecture
-        self.l4 = nn.Linear(state_dim + action_dim, 256)
-        self.l5 = nn.Linear(256, 256)
-        self.l6 = nn.Linear(256, 1)
+        self.fc4 = nn.Linear(state_dim + action_dim, 256)
+        self.fc5 = nn.Linear(256, 256)
+        self.fc6 = nn.Linear(256, 1)
 
 
     def forward(self, state, action):
         sa = torch.cat([state, action], 1)
 
-        q1 = F.relu(self.l1(sa))
-        q1 = F.relu(self.l2(q1))
-        q1 = self.l3(q1)
+        q1 = F.relu(self.fc1(sa))
+        q1 = F.relu(self.fc2(q1))
+        q1 = self.fc3(q1)
 
-        q2 = F.relu(self.l4(sa))
-        q2 = F.relu(self.l5(q2))
-        q2 = self.l6(q2)
+        q2 = F.relu(self.fc4(sa))
+        q2 = F.relu(self.fc5(q2))
+        q2 = self.fc6(q2)
         return q1, q2
 
 
     def Q1(self, state, action):
         sa = torch.cat([state, action], 1)
 
-        q1 = F.relu(self.l1(sa))
-        q1 = F.relu(self.l2(q1))
-        q1 = self.l3(q1)
+        q1 = F.relu(self.fc1(sa))
+        q1 = F.relu(self.fc2(q1))
+        q1 = self.fc3(q1)
         return q1
 
 
@@ -204,8 +203,8 @@ class TD3(object):
 
 
 
-def eval_policy(policy):
-	eval_env = gym.make('Walker2DBulletEnv-v0')
+def eval_policy(policy, model_name):
+	eval_env = gym.make(f'{model_name}')
 	eval_env.seed(100)
 
 	avg_reward = 0.
@@ -226,9 +225,8 @@ def eval_policy(policy):
 
 if __name__ == "__main__":
 	
-    
     save_model = True
-    load_model = ""
+    load_model = "default"
 
     if not os.path.exists("./results"):
         os.makedirs("./results")
@@ -236,8 +234,10 @@ if __name__ == "__main__":
     if save_model and not os.path.exists("./models"):
         os.makedirs("./models")
 
-    
-    env = gym.make('Walker2DBulletEnv-v0', render=True)
+    # model_name = 'Humanoid-v2'
+    model_name = 'Walker2DBulletEnv-v0'
+
+    env = gym.make(model_name, render=False)
 	
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
@@ -250,7 +250,7 @@ if __name__ == "__main__":
     eval_freq = 5e3
     batch_size = 256
     start_timesteps = 25e3
-    max_timesteps = 1e6
+    max_timesteps = 1e7
     expl_noise = 0.1
 
     kwargs = {
@@ -268,14 +268,14 @@ if __name__ == "__main__":
 
     
     if load_model != "":
-    	policy_file = "TD3_Walker2DBullet" if load_model == "default" else load_model
+    	policy_file = f"TD3_{model_name}" if load_model == "default" else load_model
     	policy.load(f"./models/{policy_file}")
     
 
     replay_buffer = ReplayBuffer(state_dim, action_dim)
 	
 	# Evaluate untrained policy
-    evaluations = [eval_policy(policy)]
+    evaluations = [eval_policy(policy, model_name)]
 
     state, done = env.reset(), False
     episode_reward = 0
@@ -311,7 +311,7 @@ if __name__ == "__main__":
 
         if done: 
 			# +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
-            print(f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward:.3f}")
+            print(f"Total T: {t+1} Episode Num: {episode_num+1} Episode T: {episode_timesteps} Reward: {episode_reward:.2f}")
 			# Reset environment
             state, done = env.reset(), False
             episode_reward = 0
@@ -320,8 +320,8 @@ if __name__ == "__main__":
 
 		# Evaluate episode
         if (t + 1) % eval_freq == 0:
-            evaluations.append(eval_policy(policy))
-            np.save(f"./results/TD3_Walker2DBullet", evaluations)
-            if save_model: policy.save(f"./models/TD3_Walker2DBullet")
+            evaluations.append(eval_policy(policy, model_name))
+            np.save(f"./results/TD3_{model_name}", evaluations)
+            if save_model: policy.save(f"./models/TD3_{model_name}")
 
     env.close()
