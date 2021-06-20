@@ -46,9 +46,9 @@ class ReplayBuffer():
 class MuNet(nn.Module):
     def __init__(self):
         super(MuNet, self).__init__()
-        self.fc1 = nn.Linear(22, 64)
-        self.fc2 = nn.Linear(64, 64)
-        self.fc_mu = nn.Linear(64, 6)
+        self.fc1 = nn.Linear(22, 400)
+        self.fc2 = nn.Linear(400, 300)
+        self.fc_mu = nn.Linear(300, 6)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -59,10 +59,10 @@ class MuNet(nn.Module):
 class QNet(nn.Module):
     def __init__(self):
         super(QNet, self).__init__()
-        self.fc_s = nn.Linear(22, 64)
-        self.fc_a = nn.Linear(6,64)
-        self.fc_q = nn.Linear(128, 32)
-        self.fc_out = nn.Linear(32,6)
+        self.fc_s = nn.Linear(22, 200)
+        self.fc_a = nn.Linear(6,200)
+        self.fc_q = nn.Linear(400, 300)
+        self.fc_out = nn.Linear(300,6)
 
     def forward(self, x, a):
         h1 = F.relu(self.fc_s(x))

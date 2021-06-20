@@ -39,7 +39,7 @@ class Agent:
         return self._action_space
 
     def load(self):
-        self.policy.load(f"./models/TD3_Walker2DBulletEnv-v0")
+        self.policy.load(f"./models/TD3_Walker2DBulletEnv-v0_lr_4e-4")
         
 
     

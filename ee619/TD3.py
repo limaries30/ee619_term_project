@@ -7,6 +7,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pybullet_envs
 
+from torch.utils.tensorboard import SummaryWriter
+import datetime
+from gym import logger
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class ReplayBuffer(object):
@@ -112,11 +116,11 @@ class TD3(object):
 
 		self.actor = Actor(state_dim, action_dim, max_action).to(device)
 		self.actor_target = copy.deepcopy(self.actor)
-		self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=3e-4)
+		self.actor_optimizer = torch.optim.Adam(self.actor.parameters(), lr=4e-4) # 1e-3
 
 		self.critic = Critic(state_dim, action_dim).to(device)
 		self.critic_target = copy.deepcopy(self.critic)
-		self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=3e-4)
+		self.critic_optimizer = torch.optim.Adam(self.critic.parameters(), lr=4e-4) # 1e-3
 
 		self.max_action = max_action
 		self.discount = discount
@@ -158,7 +162,9 @@ class TD3(object):
 		current_Q1, current_Q2 = self.critic(state, action)
 
 		# Compute critic loss
-		critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q)
+		critic_1_loss = F.mse_loss(current_Q1, target_Q)
+		critic_2_loss = F.mse_loss(current_Q2, target_Q)        
+		critic_loss = critic_1_loss + critic_2_loss
 
 		# Optimize the critic
 		self.critic_optimizer.zero_grad()
@@ -182,7 +188,7 @@ class TD3(object):
 
 			for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
 				target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
+		return critic_1_loss, critic_2_loss
 
 	def save(self, filename):
 		torch.save(self.critic.state_dict(), filename + "_critic")
@@ -201,7 +207,19 @@ class TD3(object):
 		self.actor_optimizer.load_state_dict(torch.load(filename + "_actor_optimizer"))
 		self.actor_target = copy.deepcopy(self.actor)
 
+'''
+class OrnsteinUhlenbeckNoise:
+    def __init__(self, mu):
+        self.theta, self.dt, self.sigma = 0.1, 0.01, 0.1
+        self.mu = mu
+        self.x_prev = np.zeros_like(self.mu)
 
+    def __call__(self):
+        x = self.x_prev + self.theta * (self.mu - self.x_prev) * self.dt + \
+                self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.mu.shape)
+        self.x_prev = x
+        return x
+'''
 
 def eval_policy(policy, model_name):
 	eval_env = gym.make(f'{model_name}')
@@ -224,9 +242,11 @@ def eval_policy(policy, model_name):
 
 
 if __name__ == "__main__":
+    print(device)
 	
     save_model = True
-    load_model = "default"
+    #load_model = "default"
+    load_model = ""
 
     if not os.path.exists("./results"):
         os.makedirs("./results")
@@ -234,8 +254,12 @@ if __name__ == "__main__":
     if save_model and not os.path.exists("./models"):
         os.makedirs("./models")
 
-    # model_name = 'Humanoid-v2'
     model_name = 'Walker2DBulletEnv-v0'
+
+    # Tensor board
+    logger.set_level(logger.DISABLED)
+    writer = SummaryWriter(
+        'runs/{}_TD3_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), "Gaussian"))
 
     env = gym.make(model_name, render=False)
 	
@@ -244,14 +268,14 @@ if __name__ == "__main__":
     max_action = float(env.action_space.high[0])
     discount = 0.99
     tau = 0.005
-    policy_noise = 0.2
+    policy_noise = 0.2 # 0.45
     noise_clip = 0.5
     policy_freq = 2
     eval_freq = 5e3
     batch_size = 256
     start_timesteps = 25e3
-    max_timesteps = 1e7
-    expl_noise = 0.1
+    max_timesteps = 1e6
+    expl_noise = 0.1 # 0.32
 
     kwargs = {
 		"state_dim": state_dim,
@@ -265,7 +289,7 @@ if __name__ == "__main__":
 	}
 
     policy = TD3(**kwargs)
-
+    # ou_noise = OrnsteinUhlenbeckNoise(mu=np.zeros(action_dim))
     
     if load_model != "":
     	policy_file = f"TD3_{model_name}" if load_model == "default" else load_model
@@ -282,6 +306,9 @@ if __name__ == "__main__":
     episode_timesteps = 0
     episode_num = 0
 
+    # OPT count
+    updates = 0
+
     for t in range(int(max_timesteps)):
 		
         episode_timesteps += 1
@@ -292,6 +319,7 @@ if __name__ == "__main__":
         else:
 	        action = (
 				policy.select_action(np.array(state))
+                # + ou_noise()[0]
 				+ np.random.normal(0, max_action * expl_noise, size=action_dim)
 			).clip(-max_action, max_action)
 
@@ -307,7 +335,10 @@ if __name__ == "__main__":
 
 		# Train agent after collecting sufficient data
         if t >= start_timesteps:
-            policy.train(replay_buffer, batch_size)
+            critic_1_loss, critic_2_loss = policy.train(replay_buffer, batch_size)
+            writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+            writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+            updates += 1
 
         if done: 
 			# +1 to account for 0 indexing. +0 on ep_timesteps since it will increment +1 even if done=True
@@ -320,8 +351,11 @@ if __name__ == "__main__":
 
 		# Evaluate episode
         if (t + 1) % eval_freq == 0:
-            evaluations.append(eval_policy(policy, model_name))
-            np.save(f"./results/TD3_{model_name}", evaluations)
-            if save_model: policy.save(f"./models/TD3_{model_name}")
+            eval_reward = eval_policy(policy, model_name)
+            evaluations.append(eval_reward)
+            np.save(f"./results/TD3_{model_name}_tensor_board", evaluations)
+            if save_model: policy.save(f"./models/TD3_{model_name}_tensor_board")
+
+            writer.add_scalar('reward/train', eval_reward, (t + 1))
 
     env.close()
