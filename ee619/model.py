@@ -15,6 +15,15 @@ def weights_init_(m):
         torch.nn.init.constant_(m.bias, 0)
 
 
+class StackingNet(nn.Module):
+    def __init__(self,num_inputs,hidden_size):
+        self.linear_1 = nn.Linear(num_inputs,1)
+
+    def forward(self,state):
+        x= F.relu((self.linear_1(state)))
+        return x
+
+
 class ValueNetwork(nn.Module):
     def __init__(self, num_inputs, hidden_dim):
         super(ValueNetwork, self).__init__()
@@ -33,8 +42,10 @@ class ValueNetwork(nn.Module):
 
 
 class QNetwork(nn.Module):
-    def __init__(self, num_inputs, num_actions, hidden_dim):
+    def __init__(self, num_inputs, num_actions, hidden_dim,isDropout):
         super(QNetwork, self).__init__()
+
+        self.isDropout = isDropout
 
         # Q1 architecture
         self.linear1 = nn.Linear(num_inputs + num_actions, hidden_dim)
@@ -46,16 +57,18 @@ class QNetwork(nn.Module):
         self.linear5 = nn.Linear(hidden_dim, hidden_dim)
         self.linear6 = nn.Linear(hidden_dim, 1)
 
+        self.dropout = nn.Dropout(p=0.4)
+
         self.apply(weights_init_)
 
     def forward(self, state, action):
         xu = torch.cat([state, action], 1)
 
-        x1 = F.relu(self.linear1(xu))
+        x1 = self.dropout(F.relu(self.linear1(xu))) if self.isDropout else F.relu(self.linear1(xu))
         x1 = F.relu(self.linear2(x1))
         x1 = self.linear3(x1)
 
-        x2 = F.relu(self.linear4(xu))
+        x2 = self.dropout(F.relu(self.linear4(xu))) if self.isDropout else F.relu(self.linear4(xu))
         x2 = F.relu(self.linear5(x2))
         x2 = self.linear6(x2)
 

@@ -1,15 +1,11 @@
 import math
 import torch
 
-class Yaml:
-    def __init__(self,file):
-        for key in file.keys():
-            self.__dict__[key]= file[key]
+def make_prefix(keys,args):
+    var_args = vars(args)
+    s = '_'.join([key+str(var_args[key]) for key in keys])
+    return s
 
-def yaml_to_class(file):
-    yamlClass = Yaml(file)
-
-    return yamlClass
 
 def create_log_gaussian(mean, log_std, t):
     quadratic = -((0.5 * (t - mean) / (log_std.exp())).pow(2))

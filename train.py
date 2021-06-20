@@ -1,174 +1,174 @@
-"""Evaluates an agent on a Walker2DBullet environment."""
-from argparse import ArgumentParser, Namespace
-from math import fsum
-from pickle import dump
-from typing import List, Optional
-
-import torch
-from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-
-import yaml
-import os
+import argparse
 import datetime
-import itertools
-
 import gym
-from gym import logger
-# pybullet_envs must be imported in order to create Walker2DBulletEnv
+import numpy as np
+import itertools
+import torch
+from utils import make_prefix
+from torch.utils.tensorboard import SummaryWriter
+from ee619.replay_memory import ReplayMemory
+from ee619.redq import REDQ
 import pybullet_envs    # noqa: F401  # pylint: disable=unused-import
 
-from ee619.agent import Agent
-from ee619.replay_memory import ReplayMemory
+parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
+parser.add_argument('--env-name', default="Walker2DBulletEnv-v0",
+                    help='Mujoco Gym environment (default: HalfCheetah-v2)')
+parser.add_argument('--policy', default="Gaussian",
+                    help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
+parser.add_argument('--eval', type=bool, default=True,
+                    help='Evaluates a policy a policy every 10 episode (default: True)')
+parser.add_argument('--gamma', type=float, default=0.98, metavar='G',
+                    help='discount factor for reward (default: 0.99)')
+parser.add_argument('--tau', type=float, default=0.005, metavar='G',
+                    help='target smoothing coefficient(τ) (default: 0.005)')
+parser.add_argument('--lr', type=float, default=0.00073, metavar='G',
+                    help='learning rate (default: 0.0003)')
+parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
+                    help='Temperature parameter α determines the relative importance of the entropy\
+                            term against the reward (default: 0.2)')
+parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, metavar='G',
+                    help='Automaically adjust α (default: False)')
+parser.add_argument('--seed', type=int, default=123456, metavar='N',
+                    help='random seed (default: 123456)')
+parser.add_argument('--batch_size', type=int, default=256, metavar='N',
+                    help='batch size (default: 256)')
+parser.add_argument('--num_steps', type=int, default=1000001, metavar='N',
+                    help='maximum number of steps (default: 1000000)')
+parser.add_argument('--hidden_size', type=int, default=512, metavar='N',
+                    help='hidden size (default: 256)')
+parser.add_argument('--updates_per_step', type=int, default=2, metavar='N',
+                    help='model updates per simulator step (default: 1)')
+parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
+                    help='Steps sampling random actions (default: 10000)')
+parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
+                    help='Value target update per no. of updates per step (default: 1)')
+parser.add_argument('--replay_size', type=int, default=600000, metavar='N',
+                    help='size of replay buffer (default: 10000000)')
+
+parser.add_argument('--num_q', type=int, default=1, metavar='N',
+                    help='size of replay buffer (default: 10000000)')
+
+parser.add_argument('--num_m', type=int, default=1, metavar='N',
+                    help='size of replay buffer (default: 10000000)')
 
 
-def parse_args() -> Namespace:
-    """Parses arguments for evaluate()"""
-    parser = ArgumentParser(
-        description='Evaluates an agent on a Walker2DBullet environment.')
-    parser.add_argument('-l', dest='label', default=None,
+parser.add_argument('--isDropout', action='store_false',help='size of replay buffer (default: 10000000)')
 
-                        help='if unspecified, the mean episodic return will be '
-                             'printed to stdout. otherwise, it will be dumped '
-                             'to a pickle file of the given path.')
-    parser.add_argument('-num_episodes', type=int, dest='num_episodes', default=100,
-                        help='number of trials.')
-    parser.add_argument('-s', type=int, dest='seed', default=0,
-                        help='passed to the environment for determinism.')
-    return parser.parse_args()
+parser.add_argument('--model_save_dir', type=str, default='/models', metavar='N',
+                    help='size of replay buffer (default: 10000000)')
 
+parser.add_argument('--cuda', action="store_false", help='run on CUDA (default: False)')
+args = parser.parse_args()
 
-def train(agent: Agent, label: Optional[str], num_episodes: int, seed: int):
-    """Computes the mean episodic return of the agent.
+if args.isDropout:
+    print(args.isDropout)
+else:
+    print('haha it is false')
 
-    Args:
-        agent: The agent to evaluate.
-        label: If None, the mean episodic return will be printed to stdout.
-            Otherwise, it will be dumped to a pickle file of the given name
-            under the "data" directory.
-        repeat: Number of trials.
-        seed: Passed to the environment for determinism.
-    """
-    YAML_PATH = './conf.yaml'
-    if os.path.isfile(YAML_PATH):
-        with open(YAML_PATH) as f:
-            conf = yaml.safe_load(f)
-    else:
-        print('no yaml file')
+# Environment
+# env = NormalizedActions(gym.make(args.env_name))
+env = gym.make(args.env_name)
+env.seed(args.seed)
+env.action_space.seed(args.seed)
 
-    print('conf',conf)
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
 
-    logger.set_level(logger.DISABLED)
-    env = gym.make('Walker2DBulletEnv-v0')
-    env.seed(seed)
-
-    #print('env._max_episode_steps',env._max_episode_steps) #1000
-
-    torch.manual_seed(seed)
-    np.random.seed(seed)
-
-    agent.load()
-
-    # Tesnorboard
-    writer = SummaryWriter(
-        'runs/{}_SAC_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"),
-                                   conf['policy'], "autotune" if conf['automatic_entropy_tuning'] else ""))
-
-    # Memory
-    memory = ReplayMemory(conf['replay_size'], seed)
+# Agent
+num_q = args.num_q
+M = args.num_m
+agent = REDQ(num_q,M,env.observation_space.shape[0], env.action_space, args)
 
 
+#file prefix
+prefix_keys = ['num_m','num_q','updates_per_step','isDropout']
+exp_prefix = make_prefix(prefix_keys,args)
 
-    rewards: List[float] = []
-
-    total_numsteps = 0
-    updates = 0
-
-    for i_episode in itertools.count(1):
-
-        state = env.reset()
-        episode_reward = 0
-        episode_steps = 0
-        done = False
-        episode_steps = 0
-        while not done:
-
-            if conf['start_steps'] > total_numsteps:
-                action = env.action_space.sample()  # Sample random action
-            else:
-                action = agent.act(state)  # Sample action from policy
-
-            if len(memory) > conf['batch_size']:
-                # Number of updates per step in environment
-                for i in range(conf['updates_per_step']):
-                    # Update parameters of all the networks
-                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(memory,
-                                                                                                         conf['batch_size'],
-                                                                                                         updates)
-
-                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                    writer.add_scalar('loss/policy', policy_loss, updates)
-                    writer.add_scalar('loss/entropy_loss', ent_loss, updates)
-                    writer.add_scalar('entropy_temprature/alpha', alpha, updates)
-                    updates += 1
-
-            next_state, reward, done, _ = env.step(action)  # Step
-            episode_steps += 1
-            total_numsteps += 1
-            episode_reward += reward
-
-            # Ignore the "done" signal if it comes from hitting the time horizon.
-            # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
-            mask = 1 if episode_steps == env._max_episode_steps else float(not done)
-
-            memory.push(state, action, reward, next_state, mask)  # Append transition to memory
-
-            state = next_state
-
-            rewards.append(reward)
-
-        if total_numsteps > conf['num_steps']:
-            break
-        writer.add_scalar('reward/train', episode_reward, i_episode)
-        if i_episode % 100 == 0:
-            print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps,
-                                                                                      episode_steps,
-                                                                                      round(episode_reward, 2)))
-
-        if i_episode % 10 == 0 and conf['eval'] is True:
-            avg_reward = 0.
-            episodes = 10
-            for _ in range(episodes):
-                state = env.reset()
-                episode_reward = 0
-                done = False
-                while not done:
-                    action = agent.act(state, evaluate=True)
-
-                    next_state, reward, done, _ = env.step(action)
-                    episode_reward += reward
-
-                    state = next_state
-                avg_reward += episode_reward
-            avg_reward /= episodes
-
-            writer.add_scalar('avg_reward/test', avg_reward, i_episode)
-
-            print("----------------------------------------")
-            print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))
-            print("----------------------------------------")
-
-    mean_episode_return = fsum(rewards) / num_episodes
-    if label is None:
-        print(mean_episode_return)
-    else:
-        if not label.endswith('.pkl'):
-            label += '.pkl'
-        with open(label, 'wb') as file:
-            dump(mean_episode_return, file)
-    return mean_episode_return
+#Tesnorboard
+writer = SummaryWriter('runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
+                                                             args.policy, exp_prefix))
 
 
-if __name__ == '__main__':
-    train(agent=Agent(), **vars(parse_args()))
+# Memory
+memory = ReplayMemory(args.replay_size, args.seed)
+
+# Training Loop
+total_numsteps = 0
+updates = 0
+
+
+for i_episode in itertools.count(1):
+
+    prev_max_epi_reward = 0
+    episode_reward = 0
+    episode_steps = 0
+    done = False
+    stat
+
+    while not done:
+        if args.start_steps > total_numsteps:
+            action = env.action_space.sample()  # Sample random action
+        else:
+            action = agent.select_action(state)  # Sample action from policy
+
+        if len(memory) > args.batch_size:
+            # Number of updates per step in environment
+            for i in range(args.updates_per_step):
+                # Update parameters of all the networksates)
+                critic_1_loss, critic_2_loss,policy_loss = agent.update_parameters(memory, args.batch_size, updates)
+
+                writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+                writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+                writer.add_scalar('loss/policy', policy_loss, updates)
+
+                updates += 1
+
+        next_state, reward, done, _ = env.step(action) # Step
+        episode_steps += 1
+        total_numsteps += 1
+        episode_reward += reward
+
+        # Ignore the "done" signal if it comes from hitting the time horizon.
+        # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
+        mask = 1 if episode_steps == env._max_episode_steps else float(not done)
+
+        memory.push(state, action, reward, next_state, mask) # Append transition to memory
+
+        state = next_state
+
+    if total_numsteps > args.num_steps:
+        break
+
+    writer.add_scalar('reward/train', episode_reward, i_episode)
+    print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps, episode_steps, round(episode_reward, 2)))
+
+    if i_episode % 10 == 0 and args.eval is True:
+        avg_reward = 0.
+        episodes = 10
+        for _  in range(episodes):
+            state = env.reset()
+            episode_reward = 0
+            done = False
+            while not done:
+                action = agent.select_action(state, evaluate=True)
+
+                next_state, reward, done, _ = env.step(action)
+                episode_reward += reward
+
+                state = next_state
+            avg_reward += episode_reward
+
+        avg_reward /= episodes
+
+        if prev_max_epi_reward < avg_reward:
+            prev_max_epi_reward = avg_reward
+            agent.save_model(args.env_name,exp_prefix)
+
+        writer.add_scalar('avg_reward/test', avg_reward, total_numsteps)
+        print("----------------------------------------")
+        print("Test Episodes: {}, Avg. Reward: {}".format(episodes, round(avg_reward, 2)))
+        print("----------------------------------------")
+        avg_reward = 0
+
+env.close()
+
