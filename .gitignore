@@ -11,6 +11,11 @@ runs/
 # C extensions
 *.so
 
+models/
+final_log/
+runs/
+imgs/
+
 # Distribution / packaging
 .Python
 env/
